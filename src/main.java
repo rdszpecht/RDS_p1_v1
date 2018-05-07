@@ -21,8 +21,12 @@ public class main {
         Path path = fd.getPath("/" + firstFileName);
 
         List<String> donwloadLinks = fd.getDownloadsList(path);
-        List<Element> elements = ringfanceElements(donwloadLinks);
+        List<Element> elements = riseElements(donwloadLinks);
 
+        long startTime = System.currentTimeMillis();
+
+        // non concurrent
+        /*
         for (Element element: elements){
             fd.downloadParts(element);
         }
@@ -31,15 +35,23 @@ public class main {
         for (Element element: elements){
             sam.mergeFile(fd.getPath().toString(), element.getName());
         }
+        */
+
+        // Concurrent
+        fd.downloadParts(elements);
+
+        long elapsedTime = System.currentTimeMillis() - startTime;
+        System.out.println("Elapsed time: " + (double)elapsedTime / 1000.0 + "s");
 
         clearDir(fd.getPath().toString(), firstFileName);
         System.out.println("\nProcess has been finished, check out: " + fd.getPath());
     }
 
-    private static List<Element> ringfanceElements(List<String> links){
+    private static List<Element> riseElements(List<String> links){
         List<Element> elements = new ArrayList<Element>();
         String name;
         Element element = null;
+
         for (String link: links) {
             if(link.contains("Fichero:")){
                 if (element != null){

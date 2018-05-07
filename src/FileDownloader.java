@@ -3,6 +3,7 @@ import java.net.URL;
 import java.nio.file.*;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.Semaphore;
 
 public class FileDownloader {
 	String initialPath = "./downloads";
@@ -31,6 +32,8 @@ public class FileDownloader {
 		return dsList;
 	}
 
+	// non concurrent
+	/*
 	public void downloadParts (Element element){
 	    List<String> links = element.getLinkList();
 
@@ -42,8 +45,71 @@ public class FileDownloader {
             }
         }
     }
+	*/
 
-	public void process(String downloadsFileURL) throws IOException {
+	public void downloadParts(List<Element> elements){
+		for (Element element: elements){
+			downloadElement(element);
+		}
+	}
+
+	private void downloadElement(Element element){
+		List<String> links = element.getLinkList();
+		String link;
+		int checksum = links.size();
+		Semaphore semaphore = new Semaphore(1);
+		int position = 0;
+
+		while(position != checksum) {
+			try {
+				semaphore.acquire();
+
+				int finalPosition = position;
+				position++;
+
+				new Thread(() -> {
+					try {
+						process(links.get(finalPosition));
+					} catch (IOException e) {
+						e.printStackTrace();
+					}
+				},"").run();
+
+				semaphore.release();
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+			}
+		}
+
+		// Wait until all the elements are downloaded
+		while(!allDonwloaded(element.getName(), checksum)){
+			try {
+				Thread.sleep(1000);
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+			}
+		}
+		// Merge the element
+		SplitAndMerge sam = new SplitAndMerge();
+		sam.mergeFile(this.getPath().toString(), element.getName());
+	}
+
+	private boolean allDonwloaded(String name, int checksum){
+		int downloadedParts = 0;
+		File directory = new File("./downloads");
+		File[] files = directory.listFiles();
+		Path path;
+
+		for (File file: files){
+			if ((file.getName().contains(".part")) && (file.getName().contains(name))){
+				downloadedParts++;
+			}
+		}
+
+		return (downloadedParts == checksum);
+	}
+
+	protected void process(String downloadsFileURL) throws IOException {
 		// name is the name of the file we are downloading, which means its the last part of the link
 		int sepIndx = downloadsFileURL.lastIndexOf('/');
 		String name = downloadsFileURL.substring(sepIndx);

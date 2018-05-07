@@ -1,4 +1,5 @@
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 public class Element {
@@ -7,7 +8,7 @@ public class Element {
 
     public Element(String name){
         this.name = name;
-        linkList = new ArrayList<String>();
+        linkList = Collections.synchronizedList(new ArrayList<String>());
     }
 
     public Element(String name, List linkList){
