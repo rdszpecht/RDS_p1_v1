@@ -1,28 +1,68 @@
 import java.io.*;
-import java.net.URL;
 import java.nio.file.*;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.Semaphore;
+import java.util.concurrent.*;
+import java.net.URL;
 
 public class FileDownloader {
-	String initialPath = "./downloads";
-	int maxDonwloads;
+	private final String initialPath = "./downloads";
+	private int maxDonwloads;
+	private List<Thread> downloaders = new ArrayList<Thread>();
+	private LinkedBlockingDeque<String> links;
+	private CyclicBarrier barrier;
+	private CountDownLatch latch = new CountDownLatch(1);
+	private SplitAndMerge sam;
+	private Exchanger<LinkedBlockingDeque> exchanger;
+	private final String FIRST_FILE_NAME = "descargas.txt";
 
 	public FileDownloader(int maxDonwloads) {
 		initDir();
 		this.maxDonwloads = maxDonwloads;
+		exchanger = new Exchanger();
+		links = new LinkedBlockingDeque<String>();
+		barrier = new CyclicBarrier(maxDonwloads, () ->{
+			barrierCode();
+		});
+		sam = new SplitAndMerge();
+
+		for (int i = 0; i < maxDonwloads; i++){
+			Thread th = new Thread(new ThreadCode(barrier, latch, links));
+			th.start();
+			downloaders.add(th);
+		}
 	}
 
-	public Path getPath(){
+	public void initLinks(){
+		List<String> listOfLinks =  getDownloadsList(this.getPath("/" + FIRST_FILE_NAME));
+		String auxName = "";
+
+		for (String line: listOfLinks){
+			if (line.contains("Fichero: ")){
+				if(!auxName.equals("")){
+					links.offer("Fichero: " + auxName);
+				}
+				auxName = line.split(": ")[1];
+			}else {
+				links.offer(line);
+			}
+		}
+		links.offer("Fichero: " + auxName);
+	}
+
+	protected Path getPath(){
 		return Paths.get(initialPath);
 	}
 
-	public Path getPath(String s){
+	protected Path getPath(String s){
 	    return Paths.get(initialPath + s);
     }
 
-	public List<String> getDownloadsList(Path path){
+    public String getInitialPath(){
+		return this.initialPath;
+	}
+
+	protected List<String> getDownloadsList(Path path){
 		List<String> dsList = new ArrayList<String>();
 		try {
 			dsList = Files.readAllLines(path);
@@ -32,95 +72,30 @@ public class FileDownloader {
 		return dsList;
 	}
 
-	// non concurrent
-	/*
-	public void downloadParts (Element element){
-	    List<String> links = element.getLinkList();
-
-	    for (String link: links){
-            try {
-                process(link);
-            } catch (IOException e) {
-                System.err.println("ERROR. Something gone wrong downloading some part of: " + element.getName());
-            }
-        }
-    }
-	*/
-
-	public void downloadParts(List<Element> elements){
-		for (Element element: elements){
-			downloadElement(element);
-		}
+	protected void downloadAll(){
+		latch.countDown();
 	}
 
-	private void downloadElement(Element element){
-		List<String> links = element.getLinkList();
-		String link;
-		int checksum = links.size();
-		Semaphore semaphore = new Semaphore(1);
-		int position = 0;
-
-		while(position != checksum) {
-			try {
-				semaphore.acquire();
-
-				int finalPosition = position;
-				position++;
-
-				new Thread(() -> {
-					try {
-						process(links.get(finalPosition));
-					} catch (IOException e) {
-						e.printStackTrace();
-					}
-				},"").run();
-
-				semaphore.release();
-			} catch (InterruptedException e) {
-				e.printStackTrace();
-			}
+	private String barrierCode(){
+		String name = links.poll().split(": ")[1];
+		sam.mergeFile(this.getPath().toString(), name);
+		System.out.println(name + " downloaded and merged");
+		if(links.isEmpty()){
+			clearDir(initialPath,FIRST_FILE_NAME);
 		}
-
-		// Wait until all the elements are downloaded
-		while(!allDonwloaded(element.getName(), checksum)){
-			try {
-				Thread.sleep(1000);
-			} catch (InterruptedException e) {
-				e.printStackTrace();
-			}
-		}
-		// Merge the element
-		SplitAndMerge sam = new SplitAndMerge();
-		sam.mergeFile(this.getPath().toString(), element.getName());
+		return name;
 	}
 
-	private boolean allDonwloaded(String name, int checksum){
-		int downloadedParts = 0;
-		File directory = new File("./downloads");
+	private static void clearDir(String dir, String firstFileName){
+		File directory = new File(dir);
 		File[] files = directory.listFiles();
 		Path path;
-
+		System.out.println("Deleting reaming files...");
 		for (File file: files){
-			if ((file.getName().contains(".part")) && (file.getName().contains(name))){
-				downloadedParts++;
+			if ((file.getName().contains(".part")) || (file.getName().equals(firstFileName))){
+				file.delete();
 			}
 		}
-
-		return (downloadedParts == checksum);
-	}
-
-	protected void process(String downloadsFileURL) throws IOException {
-		// name is the name of the file we are downloading, which means its the last part of the link
-		int sepIndx = downloadsFileURL.lastIndexOf('/');
-		String name = downloadsFileURL.substring(sepIndx);
-
-		// And now it downloads the file and store it in our downloads directory
-		URL website = new URL(downloadsFileURL);
-		InputStream in = website.openStream();
-		Path path = Paths.get(this.initialPath + "/" + name);
-
-		Files.copy(in, path, StandardCopyOption.REPLACE_EXISTING);
-		in.close();
 	}
 
 	private static void initDir(){
