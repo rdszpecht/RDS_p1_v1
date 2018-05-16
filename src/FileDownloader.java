@@ -3,7 +3,6 @@ import java.nio.file.*;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.*;
-import java.net.URL;
 
 public class FileDownloader {
 	private final String initialPath = "./downloads";

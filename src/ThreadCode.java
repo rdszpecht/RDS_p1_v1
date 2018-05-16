@@ -1,8 +1,4 @@
-import java.util.NoSuchElementException;
 import java.util.concurrent.*;
-import java.net.URL;
-import java.io.*;
-import java.nio.file.*;
 
 public class ThreadCode implements Runnable{
 
